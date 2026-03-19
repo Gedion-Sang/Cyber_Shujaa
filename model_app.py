@@ -1,78 +1,46 @@
-# 📦 Import libraries
-import pandas as pd
-import pickle
+import streamlit as st
+import numpy as np
 from sklearn.datasets import fetch_california_housing
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsRegressor
-from sklearn.metrics import r2_score, mean_squared_error
 
-# 1. Load dataset
-X, y = fetch_california_housing(return_X_y=True, as_frame=True)
+# Train the model directly
+@st.cache_resource
+def load_model():
+    X, y = fetch_california_housing(return_X_y=True, as_frame=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    preprocessor = ColumnTransformer(transformers=[
+        ('scaler', StandardScaler(), X.columns.tolist())
+    ])
+    pipeline = Pipeline(steps=[
+        ('preprocessor', preprocessor),
+        ('model', KNeighborsRegressor(n_neighbors=9, weights='distance', p=1))
+    ])
+    pipeline.fit(X_train, y_train)
+    return pipeline
 
-# 2. Train-test split
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+model = load_model()
 
-# 3. Preprocessing: Imputation + Scaling for numerical features
-numeric_features = X.columns  # all are numerical
-numeric_transformer = Pipeline(steps=[
-    ('imputer', SimpleImputer(strategy='mean')),
-    ('scaler', StandardScaler())
-])
+st.title('🏠 California House Price Predictor')
+st.write('Enter the housing features below to predict the median house value.')
 
-# 4. Combine preprocessing using ColumnTransformer
-preprocessor = ColumnTransformer(transformers=[
-    ('num', numeric_transformer, numeric_features)
-])
+MedInc = st.slider('Median Income (in $10,000s)', 0.5, 15.0, 3.0)
+HouseAge = st.slider('House Age (years)', 1.0, 52.0, 20.0)
+AveRooms = st.slider('Average Rooms', 1.0, 10.0, 5.0)
+AveBedrms = st.slider('Average Bedrooms', 1.0, 5.0, 1.0)
+Population = st.slider('Population', 3.0, 3500.0, 1000.0)
+AveOccup = st.slider('Average Occupancy', 1.0, 6.0, 3.0)
+Latitude = st.slider('Latitude', 32.0, 42.0, 36.0)
+Longitude = st.slider('Longitude', -124.0, -114.0, -119.0)
 
-# 5. Build pipeline: preprocessing + KNN
-pipeline = Pipeline(steps=[
-    ('preprocessor', preprocessor),
-    ('knn', KNeighborsRegressor())
-])
-
-# 6. Define hyperparameter grid
-param_grid = {
-    'knn__n_neighbors': [3, 5, 7, 9],
-    'knn__weights': ['uniform', 'distance'],
-    'knn__p': [1, 2]
-}
-
-# 7. Apply GridSearchCV with 5-fold cross-validation
-grid_search = GridSearchCV(
-    estimator=pipeline,
-    param_grid=param_grid,
-    cv=5,
-    scoring='r2',
-    verbose=1,
-    n_jobs=-1
-)
-
-# 8. Fit the model
-grid_search.fit(X_train, y_train)
-
-# 9. Evaluate on test set
-best_model = grid_search.best_estimator_
-y_pred = best_model.predict(X_test)
-
-r2 = r2_score(y_test, y_pred)
-mse = mean_squared_error(y_test, y_pred)
-rmse = mean_squared_error(y_test, y_pred, squared=False)
-
-# 10. Print results
-print("Best Parameters:", grid_search.best_params_)
-print("Best CV R² Score:", grid_search.best_score_)
-print("Test R² Score:", r2)
-print("Test MSE:", mse)
-print("Test RMSE:", rmse)
-
-# 11. Save the pipeline
-with open('california_knn_pipeline.pkl', 'wb') as f:
-    pickle.dump(best_model, f)
-
-print("📦 Final pipeline saved to 'california_knn_pipeline.pkl'")
+if st.button('Predict Price'):
+    import pandas as pd
+    input_data = pd.DataFrame([[MedInc, HouseAge, AveRooms, AveBedrms,
+                            Population, AveOccup, Latitude, Longitude]],
+                            columns=['MedInc', 'HouseAge', 'AveRooms', 'AveBedrms',
+                                     'Population', 'AveOccup', 'Latitude', 'Longitude'])
+    prediction = model.predict(input_data)
+    st.success(f'Predicted House Value: ${prediction[0]*100000:,.0f}')
